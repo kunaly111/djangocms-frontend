@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]  # latest release minus two
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]  # latest release minus two
         requirements-file: [
             dj42_cms311.txt,
             dj42_cms41.txt,
@@ -24,6 +24,8 @@ jobs:
             dj51_cms41.txt,
             dj52_cms50.txt,
             dj60_cms50.txt,
+            dj60_cms51.txt,
+            dj61_cms51.txt,
         ]
         os: [
             ubuntu-latest,
@@ -43,19 +45,36 @@ jobs:
             requirements-file: dj60_cms50.txt
           - python-version: "3.11"
             requirements-file: dj60_cms50.txt
+          - python-version: "3.10"
+            requirements-file: dj60_cms51.txt
+          - python-version: "3.11"
+            requirements-file: dj60_cms51.txt
+          - python-version: "3.10"
+            requirements-file: dj61_cms51.txt
+          - python-version: "3.11"
+            requirements-file: dj61_cms51.txt
           # Python 3.12 and 3.13 don't support Django 4.2 with CMS 3.11
           - python-version: "3.12"
             requirements-file: dj42_cms311.txt
           - python-version: "3.13"
             requirements-file: dj42_cms311.txt
+          # Keep Python 3.15 off older dependency combinations.
+          - python-version: "3.15"
+            requirements-file: "dj42_cms311.txt"
+          - python-version: "3.15"
+            requirements-file: "dj42_cms41.txt"
+          - python-version: "3.15"
+            requirements-file: "dj50_cms41.txt"
+          - python-version: "3.15"
+            requirements-file: "dj51_cms41.txt"
 
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
       with:
         fetch-depth: '2'
 
     - name: Setup Python
-      uses: actions/setup-python@v6
+      uses: actions/setup-python@v7
       with:
         python-version: ${{ matrix.python-version }}
     - name: Install dependencies
@@ -66,4 +85,4 @@ jobs:
       run: |
         coverage run -m pytest
     - name: Upload Coverage to Codecov
-      uses: codecov/codecov-action@v5
+      uses: codecov/codecov-action@v7

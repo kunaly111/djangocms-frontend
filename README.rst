@@ -13,29 +13,44 @@ and templates.
 
 .. image:: preview.png
 
+Why this exists
+===============
+
+The plugin tree is the editor's interface. Every component you define, every
+nesting rule you allow, and every name you choose becomes a decision an editor
+has to make – over and over. **Plugin architecture is editor experience.**
+
+django CMS Frontend exists so that you can shape that experience deliberately:
+declare components that model editorial intent rather than framework internals,
+constrain what can go where, and keep the CSS framework an implementation
+detail instead of a structure your editors have to navigate.
+
+Further reading: `Plugin Architecture Is Editor Experience
+<https://www.django-cms.org/resources/blog/2026/09/07/plugin-architecture-is-editor-experience/>`_.
+
 Key features
 ============
 
 * **Effortless Development of Custom Components**: Create reusable frontend
   components with ease, utilizing simple templates and declarative form
   classes. These components can function both as CMS plugins and within
-  standard Django templates. ​
+  standard Django templates.
 
 * **Framework-Agnostic Design**: Maintain flexibility in your project's design
   by decoupling plugins from specific versions of a CSS framework. This ensures
   that updating frameworks in the future doesn't necessitate rebuilding your
-  site's plugin structure. ​
+  site's plugin structure.
 
 * **Built-in Bootstrap 5 Components**: Access a ready-to-use collection
   of Bootstrap 5 components, streamlining the process of building responsive
-  and modern interfaces. ​
+  and modern interfaces.
 
 * **Extensibility**: Enhance your project by creating custom components with
   minimal code. The system is designed to be extended both within individual
-  projects and through separate theme applications. ​
+  projects and through separate theme applications.
 
 * **Consistent User Experience**: Utilize plugins as UI components throughout
-  your project, promoting a cohesive and uniform user interface. ​
+  your project, promoting a cohesive and uniform user interface.
 
 
 Description
@@ -170,7 +185,7 @@ See `LICENSE <https://github.com/django-cms/djangocms-frontend/blob/master/LICEN
     :target: https://djangocms-frontend.readthedocs.io/en/latest/?badge=latest
     :alt: Documentation Status
 
-.. |coverage| image:: https://codecov.io/gh/fsbraun/djangocms-frontend/branch/master/graph/badge.svg
+.. |coverage| image:: https://codecov.io/gh/django-cms/djangocms-frontend/graph/badge.svg?token=N0LGGPTuYS
    :target: https://codecov.io/gh/django-cms/djangocms-frontend
 
 .. |python| image:: https://img.shields.io/pypi/pyversions/djangocms-frontend

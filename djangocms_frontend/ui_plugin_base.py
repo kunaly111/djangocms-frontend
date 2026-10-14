@@ -1,9 +1,12 @@
 # Import the components from the current directory's models module
+import copy
+
 from cms.plugin_base import CMSPluginBase
 from django.utils.encoding import force_str
 
 from djangocms_frontend.helpers import get_related
 from djangocms_frontend.models import AbstractFrontendUIItem
+from djangocms_frontend.settings import PLUGIN_DEFAULTS
 
 try:
     from cms.admin.placeholderadmin import PlaceholderAdmin
@@ -29,6 +32,23 @@ class CMSUIPluginBase(FrontendEditableAdminMixin, CMSPluginBase):
 
     def __str__(self):
         return force_str(super().__str__())
+
+    def get_form(self, request, obj=None, change=False, **kwargs):
+        form_cls = super().get_form(request, obj, change, **kwargs)
+        if change:
+            return form_cls
+        # On add: apply default_config and PLUGIN_DEFAULTS as field initials
+        # It is safe to modify the form_cls as it is a fresh class created for this request in get_form of the plugin base
+        defaults = {}
+        defaults.update(getattr(self.model, "default_config", {}))
+        defaults.update(PLUGIN_DEFAULTS.get(self.model.__name__, {}))
+        if not defaults:
+            return form_cls
+        for field_name, value in defaults.items():
+            if field_name in form_cls.base_fields:
+                form_cls.base_fields[field_name] = copy.deepcopy(form_cls.base_fields[field_name])
+                form_cls.base_fields[field_name].initial = value
+        return form_cls
 
     def render(self, context, instance, placeholder):
         if isinstance(instance, AbstractFrontendUIItem):
@@ -63,4 +83,15 @@ class CMSUIPluginBase(FrontendEditableAdminMixin, CMSPluginBase):
 
 
 class CMSUIComponent(CMSUIPluginBase):
-    pass
+    def save_model(self, request, obj, form, change):
+        """Auto-create slot plugins when a component plugin instance is created.
+
+        This is the component default. A component's nested ``PluginMixin`` can
+        extend it by calling ``super().save_model(...)``.
+        """
+        from cms.api import add_plugin
+
+        super().save_model(request, obj, form, change)
+        if not change:
+            for slot in self.slots:
+                add_plugin(obj.placeholder, slot, obj.language, target=obj)

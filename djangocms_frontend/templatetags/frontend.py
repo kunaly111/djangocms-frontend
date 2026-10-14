@@ -1,11 +1,13 @@
+import copy
 import json
 import typing
 import uuid
 
 from classytags.arguments import Argument, MultiKeywordArgument
 from classytags.core import Options, Tag
-from classytags.helpers import AsTag
-from cms.models import CMSPlugin
+from classytags.helpers import AsTag, flatten_context
+from cms.models import CMSPlugin, get_cms_setting
+from cms.plugin_rendering import PluginContext
 from cms.templatetags.cms_tags import CMSEditableObject, render_plugin
 from django import template
 from django.conf import settings as django_settings
@@ -16,13 +18,16 @@ from django.http import HttpRequest
 from django.template.defaultfilters import safe
 from django.utils.encoding import force_str
 from django.utils.functional import Promise
-from django.utils.html import conditional_escape, mark_safe
+from django.utils.html import conditional_escape
+from django.utils.module_loading import import_string
+from django.utils.safestring import mark_safe
 from entangled.forms import EntangledModelFormMixin
 
 from djangocms_frontend import settings
 from djangocms_frontend.fields import HTMLsanitized
 from djangocms_frontend.helpers import get_related_object as related_object
 from djangocms_frontend.models import FrontendUIItem
+from djangocms_frontend.plugin_tag import patched_template
 
 register = template.Library()
 
@@ -178,6 +183,7 @@ class DummyPlugin:
         self.plugin_type = (f"{plugin_type}{slot_name.capitalize()}Plugin") if slot_name else "DummyPlugin"
         if slot_name is None:
             self.parse_slots(nodelist, plugin_type)
+        self.pk = None
         super().__init__()
 
     def parse_slots(self, nodelist, plugin_type):
@@ -209,19 +215,23 @@ class Plugin(AsTag):
     def get_value(self, context, name, kwargs, nodelist):
         from djangocms_frontend.plugin_tag import plugin_tag_pool
 
+        if "_cms_components" in context:
+            # Component templates are rendered at startup to collect their declarations. At that
+            # point the plugin tag pool is not populated yet, so no plugin can be rendered (and no
+            # output is used anyway). Render the nodelist only to pick up nested declarations.
+            return nodelist.render(context)
         if name not in plugin_tag_pool:
             return self.message(
                 f'To use "{name}" with the {{% plugin %}} template tag, add its plugin class to '
                 f"the CMS_COMPONENT_PLUGINS setting"
             )
-        context.push()
-        instance = plugin_tag_pool[name]["defaults"]
-        plugin_class = plugin_tag_pool[name]["class"]
+        field_values = copy.deepcopy(plugin_tag_pool[name]["defaults"])
+        plugin = plugin_tag_pool[name]["class"]()
 
-        if issubclass(plugin_class.form, EntangledModelFormMixin):
+        if issubclass(plugin.form, EntangledModelFormMixin):
             # Handle entangled forms such as djangocms-frontend's correctly
             for field, value in kwargs.items():
-                for container, fields in plugin_class.form._meta.entangled_fields.items():
+                for container, fields in plugin.form._meta.entangled_fields.items():
                     if field in fields:
                         if isinstance(value, models.Model):
                             # Correctly encode references
@@ -229,24 +239,31 @@ class Plugin(AsTag):
                                 "model": f"{value._meta.app_label}.{value._meta.model_name}",
                                 "pk": value.pk,
                             }
-                        instance[container][field] = value
+                        field_values[container][field] = value
                         break
                 else:
-                    instance[field] = value
+                    field_values[field] = value
         else:
-            instance.update(kwargs)
+            field_values.update(kwargs)
         # Create context
-        context["instance"] = plugin_class.model(**instance)
-        # Call render method of plugin
-        context = plugin_class().render(context, context["instance"], None)
+        instance = plugin.model(**field_values)
         # Replace inner plugins with the nodelist, i.e. the content within the plugin tag
-        context["instance"].child_plugin_instances = DummyPlugin(
-            nodelist, context["instance"].plugin_type
-        ).get_instances()
-        # ... and render
-        result = plugin_tag_pool[name]["template"].render(context.flatten())
-        context.pop()
-        return result
+        instance.child_plugin_instances = DummyPlugin(nodelist, instance.plugin_type).get_instances()
+        # ... and render (see cms.plugin_rendering.ContentRenderer)
+        context = PluginContext(context, instance, None)
+        context = plugin.render(context, instance, "slot")
+        context = flatten_context(context)
+        template_name = plugin._get_render_template(context, instance, None)
+        if template_name not in plugin_tag_pool[name]["templates"]:
+            plugin_tag_pool[name]["templates"][template_name] = patched_template(template_name)
+        template = plugin_tag_pool[name]["templates"][template_name]
+        content = template.render(context)
+
+        for path in get_cms_setting("PLUGIN_PROCESSORS"):
+            processor = import_string(path)
+            content = processor(instance, None, content, context)
+
+        return content
 
 
 class RenderChildPluginsTag(Tag):
@@ -314,6 +331,22 @@ class RenderChildPluginsTag(Tag):
         return content
 
 
+@register.filter
+def get_slot(instance, slot_name):
+    """Get plugins for a specific slot directly from the instance. This is useful for rendering slots in a component's template,
+    e.g. with {% for plugin in instance|get_slot:"community" %}.
+    Usage: {% for plugin in instance|get_slot:"community" %} ... {% endfor %}
+    """
+
+    def generator():
+        plugin_type = f"{instance.__class__.__name__}{slot_name.capitalize()}Plugin"
+        for plugin in instance.child_plugin_instances:
+            if plugin.plugin_type == plugin_type:
+                yield from plugin.child_plugin_instances
+
+    return tuple(generator())
+
+
 class InlineField(CMSEditableObject):
     name = "inline_field"
     options = Options(
@@ -333,12 +366,22 @@ class InlineField(CMSEditableObject):
             attribute = instance  # First parameter is the attribute
             instance = context.get("instance", None)  # Use instance from context
 
+        # To be editable the instance needs to be a CMSPlugin, not a DummyPlugin (they have no pk in their model class)
+        # Finally, the placeholder needs to allow editing.
+        placeholder_editable = (
+            isinstance(instance, CMSPlugin)
+            and instance.pk
+            and (
+                not hasattr(instance.placeholder, "check_source")  # django CMS 3.11 does not have check_source
+                or instance.placeholder.check_source(context["request"].user)  # Otherwise needs to apss
+            )
+        )
+
         if is_registering_component(context) and attribute:
             # Autodetect inline field and add it to the component
             update_component_properties(context, "frontend_editable_fields", attribute, append=True)
-        elif is_inline_editing_active(context) and isinstance(instance, CMSPlugin) and instance.pk:
-            # Only allow inline field to be rendered if inline editing is active and the instance is a CMSPlugin
-            # DummyPlugins of the ``plugin`` tag are cannot be edited (they have no pk in their model class)
+        elif is_inline_editing_active(context) and placeholder_editable:
+            # Only allow inline field to be rendered if inline editing is active
             kwargs["edit_fields"] = attribute
             return super().render_tag(context, instance=instance, attribute=attribute, **kwargs)
         else:

@@ -10,7 +10,7 @@ screens).
 
 The details of the grid system are based on the Bootstrap framework. Therefore,
 for details on how grids work, see, e.g. the `Bootstrap 5 documentation
-<https://getbootstrap.com/docs/5.1/layout/grid/>`_.
+<https://getbootstrap.com/docs/5.3/layout/grid/>`_.
 
 .. index::
     single: Container
@@ -20,7 +20,7 @@ Container
 *********
 
 A container is an invisible element that wraps other content. There are
-in two types of containers:
+three types of containers:
 
 Container
    All other containers restrict the width of their content depending on
@@ -48,17 +48,19 @@ Component example
 
 To create a container in a Django template, you need to load the `frontend` tags
 and then use the `plugin` template tag to render the container plugin.
-Below is an example of how you might do this::
+Below is an example of how you might do this:
+
+.. code-block:: template
 
     {% load frontend %}
 
     <!-- Example of using the plugin template tag for a container -->
-    {% plugin "container" container_type="container-fluid" %}
+    {% plugin "gridcontainer" container_type="container-fluid" %}
         {% plugin "gridrow" %}
-            {% plugin "column" xs_col=6 %}
+            {% plugin "gridcolumn" xs_col=6 %}
                 <p>This is the first column inside the container.</p>
             {% endplugin %}
-            {% plugin "column" xs_col=6 %}
+            {% plugin "gridcolumn" xs_col=6 %}
                 <p>This is the second column inside the container.</p>
             {% endplugin %}
         {% endplugin %}
@@ -97,6 +99,7 @@ row** are distributed horizontally.
     given), the "row-cols-xl" entry the number of columns on a xl screen.
 
 .. image:: screenshots/row.png
+    :alt: The Row plugin editing form with alignment and row-cols settings
 
 
 .. index::
@@ -133,6 +136,7 @@ comes handy if, e.g., the column is supposed to contain centered
 content.
 
 .. image:: screenshots/col.png
+    :alt: The Column plugin editing form with size and alignment settings
 
 .. note::
 
@@ -148,7 +152,7 @@ Re-usable component example
 used in all your project's templates. Example (if key word arguments are
 skipped they fall back to their defaults):
 
-.. code-block::
+.. code-block:: template
 
     {% load frontend %}
     {% plugin "gridcontainer" container_type="container-fluid" %}

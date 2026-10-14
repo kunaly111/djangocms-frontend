@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import copy
 import importlib
 import warnings
 
@@ -8,11 +7,8 @@ from cms.plugin_pool import plugin_pool
 from cms.templatetags.cms_tags import render_plugin
 from django.conf import settings
 from django.contrib.admin.sites import site as admin_site
-from django.template import engines
 from django.template.library import SimpleNode
 from django.template.loader import get_template
-
-django_engine = engines["django"]
 
 plugin_tag_pool = {}
 
@@ -51,15 +47,21 @@ def render_dummy_plugin(context, dummy_plugin):
     return dummy_plugin.nodelist.render(context)
 
 
-def patch_template(template):
+def get_recompiled_template(template_name: str):
+    """Get a recompiled template to ensure that the patched render_plugin is used."""
+    template = get_template(template_name)
+    source = template.origin.loader.get_contents(template.origin)
+    # Compile a fresh Template instance
+    return template.backend.from_string(source)
+
+
+def patched_template(template_name: str):
     """Patches the template to use the dummy plugin renderer instead of the real one."""
-    copied_template = copy.deepcopy(template)
-    patch = False
-    for node in copied_template.template.nodelist.get_nodes_by_type(SimpleNode):
+    template = get_recompiled_template(template_name)  # Gives a freshly compiled template object
+    for node in template.template.nodelist.get_nodes_by_type(SimpleNode):
         if node.func == render_plugin:
-            patch = True
             node.func = render_dummy_plugin
-    return copied_template if patch else template
+    return template
 
 
 def get_plugin_class(settings_string: str | type) -> type:
@@ -75,6 +77,10 @@ def get_plugin_class(settings_string: str | type) -> type:
 
 
 def setup():
+    # Do not rely on another app having populated the plugin pool already: depending on the order of
+    # INSTALLED_APPS this runs before django.contrib.admin's autodiscover triggers plugin discovery.
+    plugin_pool.discover_plugins()
+
     allowed_plugin_types = tuple(get_plugin_class(cls) for cls in getattr(settings, "CMS_COMPONENT_PLUGINS", []))
 
     for plugin in plugin_pool.plugins.values():  # We'll check all plugins irrespectivly of placeholder config
@@ -89,13 +95,13 @@ def setup():
             if hasattr(instance, "initialize_from_form"):
                 instance.initialize_from_form(plugin.form)
             if tag_name not in plugin_tag_pool:
-                template = get_template(plugin_admin._get_render_template({"request": None}, instance, None))
+                template_name = plugin_admin._get_render_template({"request": None}, instance, None)
                 plugin_tag_pool[tag_name] = {
                     "defaults": {
                         **_get_plugindefaults(instance),
                         **dict(plugin_type=plugin.__name__),
                     },
-                    "template": patch_template(template),
+                    "templates": {template_name: patched_template(template_name)},
                     "class": plugin,
                 }
             else:  # pragma: no cover

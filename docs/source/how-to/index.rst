@@ -13,6 +13,7 @@ step-by-step guidance.
    :maxdepth: 1
 
    use-frontend-as-component
+   components-with-slots
    inline-editing
    add-frontend-plugins
    extend-frontend-plugins
@@ -20,4 +21,5 @@ step-by-step guidance.
    create-themes
    migrate-bootstrap4
    migrate-3rd-party-plugins
+   migrate-custom-plugins
    internal-link-targets

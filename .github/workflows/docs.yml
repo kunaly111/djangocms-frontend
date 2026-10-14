@@ -12,14 +12,14 @@ jobs:
     name: build
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11'
           cache: 'pip'
       - name: Cache dependencies
-        uses: actions/cache@v5.0.2
+        uses: actions/cache@v6.1.0
         with:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-${{ hashFiles('docs/requirements.in') }}
@@ -29,7 +29,7 @@ jobs:
       - name: Build docs
         run: |
           cd docs
-          make html
+          sphinx-build -b html -d _build/doctrees source _build/html
 
   spelling:
     runs-on: ubuntu-latest
@@ -37,14 +37,14 @@ jobs:
     needs: build
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11'
           cache: 'pip'
       - name: Cache dependencies
-        uses: actions/cache@v5.0.2
+        uses: actions/cache@v6.1.0
         with:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-${{ hashFiles('docs/requirements.in') }}

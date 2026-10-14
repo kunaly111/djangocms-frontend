@@ -3,12 +3,14 @@ from cms.test_utils.testcases import CMSTestCase
 
 from djangocms_frontend.cms_plugins import (
     MyButtonPlugin,
+    MyCardWithFieldsetsPlugin,
     MyHeroPlugin,
     MyStrangeComponentPlugin,
 )
 from djangocms_frontend.contrib.alert.cms_plugins import AlertPlugin
 
 from ..fixtures import TestFixture
+from ..helpers import get_filer_image
 
 
 class ComponentPluginTestCase(TestFixture, CMSTestCase):
@@ -118,16 +120,32 @@ class ComponentPluginTestCase(TestFixture, CMSTestCase):
             count=0,
         )
 
+    def _save_hero_through_admin(self, instance, change):
+        """Call ``save_model`` the way Django's admin does: with a bound, validated form
+        and ``obj`` being that form's unsaved instance."""
+        image = get_filer_image()
+        self.addCleanup(image.delete)
+        form = MyHeroPlugin.form(
+            data={"title": "my title", "slogan": "my slogan", "image": image.pk},
+            instance=instance,
+        )
+        self.assertTrue(form.is_valid(), form.errors)
+        obj = form.save(commit=False)
+        request = self.get_request(path="/")
+        request.user = self.superuser
+        MyHeroPlugin().save_model(request=request, obj=obj, form=form, change=change)
+        return obj
+
     def test_autocreate_slots(self):
         from djangocms_frontend.cms_plugins import MyHeroSlotPlugin, MyHeroTitlePlugin
 
-        instance = add_plugin(
+        instance = MyHeroPlugin.model(
             placeholder=self.placeholder,
             plugin_type=MyHeroPlugin.__name__,
             language=self.language,
+            position=1,
         )
-        request = self.get_request(path="/")
-        MyHeroPlugin().save_model(request=request, obj=instance, form=MyHeroPlugin.form, change=False)
+        instance = self._save_hero_through_admin(instance, change=False)
 
         plugins = list(self.placeholder.get_plugins())
 
@@ -138,6 +156,19 @@ class ComponentPluginTestCase(TestFixture, CMSTestCase):
         self.assertEqual(plugins[1].parent.pk, instance.pk)
         self.assertEqual(plugins[2].plugin_type, MyHeroSlotPlugin.__name__)
         self.assertEqual(plugins[2].parent.pk, instance.pk)
+
+    def test_no_slots_created_on_change(self):
+        # Editing an existing plugin (change=True) must not re-create slots.
+        instance = add_plugin(
+            placeholder=self.placeholder,
+            plugin_type=MyHeroPlugin.__name__,
+            language=self.language,
+        )
+        self._save_hero_through_admin(instance, change=True)
+
+        plugins = list(self.placeholder.get_plugins())
+        self.assertEqual(len(plugins), 1)
+        self.assertEqual(plugins[0].plugin_type, MyHeroPlugin.__name__)
 
     def test_simple_component_plugin(self):
         instance = add_plugin(
@@ -151,9 +182,10 @@ class ComponentPluginTestCase(TestFixture, CMSTestCase):
 
         from djangocms_link.templatetags.djangocms_link_tags import to_url
 
-        link = to_url(instance.link)
-
         self.publish(self.page, self.language)
+
+        # Resolve the URL only after publishing: since django-cms 5.1 an unpublished page has no URL.
+        link = to_url(instance.link)
 
         with self.login_user_context(self.superuser):
             response = self.client.get(self.request_url)
@@ -165,3 +197,47 @@ class ComponentPluginTestCase(TestFixture, CMSTestCase):
         self.assertEqual(MyStrangeComponentPlugin.name, "MyStrangeComponent")
         self.assertEqual(MyStrangeComponentPlugin.render_template, "djangocms_frontend/html_container.html")
         self.assertFalse(MyStrangeComponentPlugin.allow_children)
+
+    def test_component_with_custom_fieldsets(self):
+        """Test that components respect fieldsets provided in the Meta class"""
+        # Check that the plugin uses custom fieldsets
+        self.assertEqual(MyCardWithFieldsetsPlugin.name, "Card with Fieldsets")
+
+        # Verify fieldsets are correctly set on the plugin
+        fieldsets = MyCardWithFieldsetsPlugin.fieldsets
+
+        # Should have 3 fieldsets
+        self.assertEqual(len(fieldsets), 3)
+
+        # First fieldset (None) should contain title and subtitle
+        self.assertIsNone(fieldsets[0][0])
+        self.assertIn("title", fieldsets[0][1]["fields"])
+        self.assertIn("subtitle", fieldsets[0][1]["fields"])
+
+        # Second fieldset ("Content") should contain body_text
+        self.assertEqual(fieldsets[1][0], "Content")
+        self.assertIn("body_text", fieldsets[1][1]["fields"])
+        self.assertIn("collapse", fieldsets[1][1]["classes"])
+
+        # Third fieldset ("Styling") should contain styling fields
+        self.assertEqual(fieldsets[2][0], "Styling")
+        self.assertIn("background_color", fieldsets[2][1]["fields"])
+        self.assertIn("text_color", fieldsets[2][1]["fields"])
+        self.assertIn("collapse", fieldsets[2][1]["classes"])
+        self.assertEqual(fieldsets[2][1]["description"], "Customize the appearance of the card")
+
+        # Test rendering with custom fieldsets
+        instance = add_plugin(
+            placeholder=self.placeholder,
+            plugin_type=MyCardWithFieldsetsPlugin.__name__,
+            language=self.language,
+        )
+        instance.initialize_from_form(MyCardWithFieldsetsPlugin.form).save()
+        self.publish(self.page, self.language)
+
+        with self.login_user_context(self.superuser):
+            response = self.client.get(self.request_url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Card Title", response.content.decode("utf-8"))
+        self.assertIn("Card body text", response.content.decode("utf-8"))

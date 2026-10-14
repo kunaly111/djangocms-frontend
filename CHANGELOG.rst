@@ -2,6 +2,69 @@
 Changelog
 =========
 
+2.5.2 (2026-09-3)
+==================
+
+* feat: Add aria labels to icons, fix them in menus by @fsbraun in https://github.com/django-cms/djangocms-frontend/pull/397
+* fix: Conform to the documentation and automatically set allow_children if child classes are specified by @fsbraun in https://github.com/django-cms/djangocms-frontend/pull/390
+* fix: Removed false positive warnings by @fsbraun in https://github.com/django-cms/djangocms-frontend/pull/394
+* fix: ./manage.py frontend stale_references failed by @fsbraun in https://github.com/django-cms/djangocms-frontend/pull/395
+
+
+2.5.1 (2026-07-08)
+==================
+
+* fix: Component child classes falsely set to [] instead of None by @fsbraun in https://github.com/django-cms/djangocms-frontend/pull/386
+
+
+2.5.0 (2026-06-29)
+==================
+
+* feat: feat: Add PluginMixin class to frontend components by @fsbraun in https://github.com/django-cms/djangocms-frontend/pull/384
+* feat: Add rename subcommand for renaming ui plugins and components. by @fsbraun in https://github.com/django-cms/djangocms-frontend/pull/370
+* feat: Heading ID (Heading Plugin) is now a prepopulated field by @fsbraun in https://github.com/django-cms/djangocms-frontend/pull/379
+* feat: Ensure `get_slot` gives a tuple (instead of a generator) by @fsbraun in https://github.com/django-cms/djangocms-frontend/pull/375
+* fix: Add form ignored `dafault_config` by @fsbraun in https://github.com/django-cms/djangocms-frontend/pull/365
+* fix: plugin template tag calls were not isolated by @fsbraun in https://github.com/django-cms/djangocms-frontend/pull/367
+* fix: Read-only placeholders rendered inline fields editable by @fsbraun in https://github.com/django-cms/djangocms-frontend/pull/368
+* fix: Add space between element attributes into AbstractFrontendUIItem… by @zbohm in https://github.com/django-cms/djangocms-frontend/pull/369
+* fix: Forms did not validate if advanced settings had been disabled by @fsbraun in https://github.com/django-cms/djangocms-frontend/pull/371
+* fix: Default configs of shared mixins leaked into other plugins by @fsbraun in https://github.com/django-cms/djangocms-frontend/pull/373
+* fix: Let icon have <i> as default tag (w/o advanced settings) by @fsbraun in https://github.com/django-cms/djangocms-frontend/pull/374
+* fix: Use getattr for TEMPLATES attribute in component_base by @fsbraun in https://github.com/django-cms/djangocms-frontend/pull/382
+* docs: Add tests for code examples in the docs by @fsbraun in https://github.com/django-cms/djangocms-frontend/pull/380
+
+
+2.4.0 (2026-03-27)
+==================
+
+* feat: add "target" option to link plugin by @corentinbettiol in https://github.com/django-cms/djangocms-frontend/pull/355
+* feat: Make slots more recognizable in the plugin tree by @fsbraun in https://github.com/django-cms/djangocms-frontend/pull/357
+* feat: Allow disabling of the Advanced Settings tab to hide technical details by @fsbraun in https://github.com/django-cms/djangocms-frontend/pull/363
+* feat: Allow custom defaults for plugins and components by @fsbraun in https://github.com/django-cms/djangocms-frontend/pull/356
+* fix: Allow change_form_template for components by @fsbraun in https://github.com/django-cms/djangocms-frontend/pull/352
+* fix: picture now uses filer thumbnail option if set by @corentinbettiol in https://github.com/django-cms/djangocms-frontend/pull/360
+* fix: plugin template tag ignored dynamic templates by @fsbraun in https://github.com/django-cms/djangocms-frontend/pull/361
+* fix: Avoid copying compiled templates by @fsbraun in https://github.com/django-cms/djangocms-frontend/pull/362
+
+
+2.3.1 (2026-03-12)
+==================
+
+* feat: Add get_slot template filter by @fsbraun in https://github.com/django-cms/djangocms-frontend/pull/349
+* fix: fieldsets in component meta by @fsbraun in https://github.com/django-cms/djangocms-frontend/pull/348
+* fix: Do not require session object by @fsbraun in https://github.com/django-cms/djangocms-frontend/pull/338
+* fix(frontend): fail gracefully when django-filer is missing by @kunaly111 in https://github.com/django-cms/djangocms-frontend/pull/340
+* docs: Update field attributes in template components tutorial by @creimers in https://github.com/django-cms/djangocms-frontend/pull/341
+* docs: Fix more examples in the docs by @creimers in https://github.com/django-cms/djangocms-frontend/pull/344
+* docs: Update reference by @fsbraun in https://github.com/django-cms/djangocms-frontend/pull/350
+
+**New Contributors**
+
+* @kunaly111 made their first contribution in https://github.com/django-cms/djangocms-frontend/pull/340
+* @creimers made their first contribution in https://github.com/django-cms/djangocms-frontend/pull/341
+
+
 2.3.0 (2025-12-29)
 ==================
 
@@ -27,6 +90,7 @@ Changelog
 
 **Full Changelog**: https://github.com/django-cms/djangocms-frontend/compare/2.2.0...2.3.0
 
+
 2.2.0 (2025-08-16)
 ==================
 
@@ -46,6 +110,7 @@ Changelog
 **New Contributors**
 
 * @nchaourar made their first contribution in https://github.com/django-cms/djangocms-frontend/pull/293
+
 
 2.1.3 (2025-07-20)
 ==================

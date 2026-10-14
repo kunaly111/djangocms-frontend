@@ -1,12 +1,13 @@
 from cms.models import CMSPlugin
 from django.core.serializers.json import DjangoJSONEncoder
 from django.db import models
-from django.utils.html import conditional_escape, mark_safe
+from django.utils.html import conditional_escape
+from django.utils.safestring import mark_safe
 from django.utils.translation import gettext
 from django.utils.translation import gettext_lazy as _
 
 from djangocms_frontend.fields import TagTypeField
-from djangocms_frontend.settings import FRAMEWORK_PLUGIN_INFO
+from djangocms_frontend.settings import FRAMEWORK_PLUGIN_INFO, PLUGIN_DEFAULTS, SHOW_ADVANCED_SETTINGS
 
 
 class AbstractFrontendUIItem(CMSPlugin):
@@ -46,8 +47,10 @@ class AbstractFrontendUIItem(CMSPlugin):
 
     def __init__(self, *args, **kwargs):
         self._additional_classes = []
-        self.html_id = None  # HTML id attribute will be set in template tag set_html_id.
+        self.html_id: str | None = None  # HTML id attribute will be set in template tag set_html_id.
         super().__init__(*args, **kwargs)
+        if not SHOW_ADVANCED_SETTINGS:
+            self.tag_type = getattr(self, "default_tag_type", self._meta.get_field("tag_type").default)
 
     def __getattr__(self, item):
         """Makes properties of plugin config available as plugin properties."""
@@ -73,9 +76,12 @@ class AbstractFrontendUIItem(CMSPlugin):
         self.config["attributes"] = attrs
 
     def get_attributes(self):
-        attributes = self.config.get("attributes", {})
+        if SHOW_ADVANCED_SETTINGS:
+            attributes = self.config.get("attributes", {})
+        else:
+            attributes = {}
         classes = self.get_classes()  # get classes
-        classes = (f'class="{classes}"') if classes else ""  # to string
+        classes = f'class="{classes}" ' if classes else ""  # to string
         parts = (
             f'{item}="{conditional_escape(value)}"' if value else f"{item}"
             for item, value in attributes.items()
@@ -85,8 +91,11 @@ class AbstractFrontendUIItem(CMSPlugin):
         return mark_safe(" " + attributes_string) if attributes_string else ""
 
     def get_classes(self):
-        attributes = self.config.get("attributes", {})
-        classes = set(attributes.get("class", "").split())  # classes added in attriutes
+        if SHOW_ADVANCED_SETTINGS:
+            attributes = self.config.get("attributes", {})
+            classes = set(attributes.get("class", "").split())  # classes added in attriutes
+        else:
+            classes = set()
         classes.update(self._additional_classes)  # add additional classes
         return conditional_escape(" ".join(classes))
 
@@ -95,7 +104,10 @@ class AbstractFrontendUIItem(CMSPlugin):
         return super().save(*args, **kwargs)
 
     def initialize_from_form(self, form=None):
-        """Populates the config JSON field based on initial values provided by the fields of form"""
+        """Populates the config JSON field based on initial values provided by the fields of form.
+        After setting form defaults, applies per-model defaults from the model's ``default_config``
+        class attribute (if any), then from the ``DJANGOCMS_FRONTEND_PLUGIN_DEFAULTS`` setting
+        (keyed by model class name). Setting-based defaults take highest priority."""
         if form is None:
             form = self.get_plugin_class().form
         if isinstance(form, type):  # if is class
@@ -105,6 +117,12 @@ class AbstractFrontendUIItem(CMSPlugin):
         entangled_fields = getattr(getattr(form, "_meta", None), "entangled_fields", {}).get("config", ())
         for field in entangled_fields:
             self.config.setdefault(field, {} if field == "attributes" else form[field].initial or "")
+        # Apply model-level defaults (override form defaults)
+        for key, value in getattr(self, "default_config", {}).items():
+            self.config[key] = value
+        # Apply settings-level defaults (highest priority)
+        for key, value in PLUGIN_DEFAULTS.get(self.__class__.__name__, {}).items():
+            self.config[key] = value
         return self
 
     def get_short_description(self):

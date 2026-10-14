@@ -1,8 +1,10 @@
 import importlib
 
+from cms.models import CMSPlugin
 from django import forms
 from django.apps import apps
 from django.utils.encoding import force_str
+from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 from entangled.forms import EntangledModelForm
 
@@ -35,12 +37,20 @@ class classproperty:
 
 
 class Slot:
-    """Slat class as syntactic surgar to more easily define slot plugins"""
+    """Slot class as syntactic surgar to more easily define slot plugins"""
 
     def __init__(self, name, verbose_name, **kwargs):
         self.name = name
         self.verbose_name = verbose_name
         self.kwargs = kwargs
+
+
+class SlotModel(CMSPlugin):
+    class Meta:
+        proxy = True
+
+    def get_short_description(self):
+        return format_html("<b>{}</b>", _("Slot"))
 
 
 class CMSFrontendComponent(forms.Form):
@@ -55,6 +65,7 @@ class CMSFrontendComponent(forms.Form):
     _plugin = None
     META_FIELDS = [
         "is_local",
+        "is_slot",
         "disable_edit",
         "disable_child_plugins",
         "show_add_form",
@@ -110,26 +121,30 @@ class CMSFrontendComponent(forms.Form):
             app_config = apps.get_containing_app_config(cls.__module__)
             if app_config is None:  # pragma: no cover
                 raise ValueError(f"Cannot find app_config for {cls.__module__}")
+            model_attrs = {
+                "Meta": type(
+                    "Meta",
+                    (),
+                    {
+                        "app_label": app_config.label,
+                        "proxy": True,
+                        "managed": False,
+                        "verbose_name": getattr(cls._component_meta, "name", cls.__name__),
+                    },
+                ),
+                "get_short_description": cls.get_short_description,
+                "__module__": cls.__module__,
+            }
+            default_config = getattr(cls._component_meta, "default_config", None)
+            if default_config:
+                model_attrs["default_config"] = default_config
             cls._model = type(
                 cls.__name__,
                 (
                     *cls._model_mixins,
                     FrontendUIItem,
                 ),
-                {
-                    "Meta": type(
-                        "Meta",
-                        (),
-                        {
-                            "app_label": app_config.label,
-                            "proxy": True,
-                            "managed": False,
-                            "verbose_name": getattr(cls._component_meta, "name", cls.__name__),
-                        },
-                    ),
-                    "get_short_description": cls.get_short_description,
-                    "__module__": cls.__module__,
-                },
+                model_attrs,
             )
         return cls._model
 
@@ -142,10 +157,22 @@ class CMSFrontendComponent(forms.Form):
             slots = cls.get_slot_plugins()
             mixins = _get_mixin_classes(mixins)
 
+            # Plugin-side behavior (``save_model``, ``get_render_template``,
+            # ``TEMPLATES``, ...) is declared in a nested ``PluginMixin`` class and
+            # mixed into the generated plugin's bases. Living in the MRO means its
+            # methods can call ``super()`` normally instead of being grafted onto
+            # the plugin as standalone functions.
+            plugin_mixin = getattr(cls, "PluginMixin", None)
+            behavior = (plugin_mixin,) if plugin_mixin is not None else ()
+            child_classes = getattr(cls._component_meta, "child_classes", None)
+            if slots:
+                child_classes = (child_classes or []) + list(slots.keys())
+
             cls._plugin = type(
                 cls.__name__ + "Plugin",
                 (
                     *mixins,
+                    *behavior,
                     *cls._plugin_mixins,
                     CMSUIComponent,
                 ),
@@ -154,26 +181,20 @@ class CMSFrontendComponent(forms.Form):
                     "module": getattr(cls._component_meta, "module", _("Components")),
                     "model": cls.plugin_model_factory(),
                     "form": cls.admin_form_factory(),
-                    "allow_children": slots or getattr(cls._component_meta, "allow_children", False),
-                    "child_classes": getattr(cls._component_meta, "child_classes", []) + list(slots.keys()),
+                    "allow_children": slots or getattr(cls._component_meta, "allow_children", bool(child_classes)),
+                    "child_classes": child_classes,
                     "render_template": getattr(cls._component_meta, "render_template", CMSUIComponent.render_template),
-                    "fieldsets": getattr(cls, "fieldsets", cls._generate_fieldset()),
-                    "change_form_template": "djangocms_frontend/admin/base.html",
+                    "fieldsets": getattr(cls._component_meta, "fieldsets", cls._generate_fieldset()),
+                    "change_form_template": getattr(
+                        cls._component_meta, "change_form_template", "djangocms_frontend/admin/base.html"
+                    ),
                     "slots": slots,
-                    "save_model": cls.save_model,
                     **{
                         field: getattr(cls._component_meta, field)
                         for field in cls.META_FIELDS
                         if hasattr(cls._component_meta, field)
                     },
-                    **(
-                        {
-                            "get_render_template": cls.get_render_template,
-                            "TEMPLATES": cls.TEMPLATES,
-                        }
-                        if hasattr(cls, "get_render_template")
-                        else {}
-                    ),
+                    **cls._deprecated_plugin_graft(),
                     "__module__": "djangocms_frontend.cms_plugins",
                 },
             )
@@ -194,9 +215,11 @@ class CMSFrontendComponent(forms.Form):
                     "allow_children": True,
                     "edit_disabled": True,
                     "is_local": False,
+                    "is_slot": True,
                     "show_add_form": False,
                     "parent_classes": [cls.__name__ + "Plugin"],
                     "render_template": cls.slot_template,
+                    # "model": SlotModel,  <-- uncomment once django CMS core is proxy safe in all current releases
                     **slot.kwargs,
                 },
             )
@@ -222,13 +245,27 @@ class CMSFrontendComponent(forms.Form):
     def get_short_description(self) -> str:
         return self.config.get("title", "")
 
-    def save_model(self, request, obj, form: forms.Form, change: bool) -> None:
-        """Auto-creates slot plugins upon creation of component plugin instance"""
-        from cms.api import add_plugin
+    #: Plugin attributes that used to be authored directly on the component and
+    #: grafted onto the generated plugin. They now belong in a nested
+    #: ``PluginMixin`` (``save_model``/``get_render_template`` as methods that can
+    #: call ``super()``, ``TEMPLATES`` as a plain attribute). Declaring them on the
+    #: component is deprecated and reported by ``check_component_plugin_behavior``.
+    _DEPRECATED_PLUGIN_ATTRS = ("save_model", "get_render_template", "TEMPLATES")
 
-        from .ui_plugin_base import CMSUIComponent
+    @classmethod
+    def _deprecated_plugin_attrs(cls) -> list[str]:
+        """Names of deprecated plugin attributes declared directly on the
+        component class (used by both the back-compat graft and the system check)."""
+        return [name for name in cls._DEPRECATED_PLUGIN_ATTRS if name in cls.__dict__]
 
-        super(CMSUIComponent, self).save_model(request, obj, form, change)
-        if not change:
-            for slot in self.slots.keys():
-                add_plugin(obj.placeholder, slot, obj.language, target=obj)
+    @classmethod
+    def _deprecated_plugin_graft(cls) -> dict:
+        """Back-compat shim: graft plugin attributes still declared directly on
+        the component class onto the generated plugin.
+
+        New code should declare these in a nested ``PluginMixin`` class so they
+        live in the plugin's MRO and can use ``super()`` instead of relying on the
+        factory to copy them across. The deprecated usage is surfaced via the
+        system check framework (see ``apps.check_component_plugin_behavior``).
+        """
+        return {name: cls.__dict__[name] for name in cls._deprecated_plugin_attrs()}
